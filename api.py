@@ -747,9 +747,14 @@ WEB_INTERFACE = '''
             return `
                 <div class="device-card" id="device-${device.id}">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                        <div class="device-name">${device.name}</div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span class="device-name" id="name-${device.id}">${device.name}</span>
+                            <input id="edit-input-${device.id}" class="name-edit" style="display:none;padding:6px;border-radius:4px;border:1px solid #ddd;min-width:160px;" value="${device.name}">
+                        </div>
                         <div>
-                            <button class="btn-primary" style="padding:6px 8px;font-size:12px;" onclick="promptRename('${device.id}')">✏️ Rename</button>
+                            <button class="btn-primary" id="edit-btn-${device.id}" style="padding:6px 8px;font-size:12px;" onclick="startEdit('${device.id}')">✏️</button>
+                            <button class="btn-success" id="save-btn-${device.id}" style="display:none;padding:6px 8px;font-size:12px;" onclick="saveEdit('${device.id}')">Save</button>
+                            <button class="btn-danger" id="cancel-btn-${device.id}" style="display:none;padding:6px 8px;font-size:12px;" onclick="cancelEdit('${device.id}')">Cancel</button>
                         </div>
                     </div>
                     <div class="device-info">
@@ -811,14 +816,40 @@ WEB_INTERFACE = '''
             `;
         }
 
-        // Prompt and rename helpers
-        function promptRename(deviceId) {
-            const nameEl = document.querySelector(`#device-${deviceId} .device-name`);
-            const current = nameEl ? nameEl.textContent : '';
-            const newName = prompt('Enter new device name:', current);
-            if (newName && newName.trim() !== '' && newName !== current) {
-                renameDevice(deviceId, newName.trim());
-            }
+        // Inline edit helpers for device renaming
+        function startEdit(deviceId) {
+            const nameSpan = document.getElementById(`name-${deviceId}`);
+            const input = document.getElementById(`edit-input-${deviceId}`);
+            const editBtn = document.getElementById(`edit-btn-${deviceId}`);
+            const saveBtn = document.getElementById(`save-btn-${device.id || deviceId}`);
+            const cancelBtn = document.getElementById(`cancel-btn-${device.id || deviceId}`);
+
+            if (editBtn) editBtn.style.display = 'none';
+            if (saveBtn) saveBtn.style.display = 'inline-block';
+            if (cancelBtn) cancelBtn.style.display = 'inline-block';
+            if (input) { input.style.display = 'inline-block'; input.focus(); input.select(); }
+        }
+
+        function cancelEdit(deviceId) {
+            const nameSpan = document.getElementById(`name-${deviceId}`);
+            const input = document.getElementById(`edit-input-${deviceId}`);
+            const editBtn = document.getElementById(`edit-btn-${deviceId}`);
+            const saveBtn = document.getElementById(`save-btn-${deviceId}`);
+            const cancelBtn = document.getElementById(`cancel-btn-${deviceId}`);
+
+            if (editBtn) editBtn.style.display = 'inline-block';
+            if (saveBtn) saveBtn.style.display = 'none';
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            if (input && nameSpan) { input.value = nameSpan.textContent; input.style.display = 'none'; }
+        }
+
+        async function saveEdit(deviceId) {
+            const input = document.getElementById(`edit-input-${deviceId}`);
+            if (!input) return;
+            const newName = input.value.trim();
+            if (!newName) { showAlert('Name cannot be empty', 'error'); return; }
+            await renameDevice(deviceId, newName);
+            cancelEdit(deviceId);
         }
 
         async function renameDevice(deviceId, newName) {
