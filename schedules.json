@@ -1,0 +1,41 @@
+{
+  "Kitchen Stove": {
+    "days": [
+      {
+        "enabled": true,
+        "onTime": "20:00",
+        "offTime": "22:00"
+      },
+      {
+        "enabled": true,
+        "onTime": "20:00",
+        "offTime": "22:00"
+      },
+      {
+        "enabled": true,
+        "onTime": "20:00",
+        "offTime": "22:00"
+      },
+      {
+        "enabled": true,
+        "onTime": "20:00",
+        "offTime": "22:00"
+      },
+      {
+        "enabled": true,
+        "onTime": "20:00",
+        "offTime": "22:00"
+      },
+      {
+        "enabled": true,
+        "onTime": "20:00",
+        "offTime": "22:00"
+      },
+      {
+        "enabled": true,
+        "onTime": "20:00",
+        "offTime": "22:00"
+      }
+    ]
+  }
+}
