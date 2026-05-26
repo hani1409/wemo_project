@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 SCHEDULE_FILE = Path(__file__).resolve().parent / 'schedules.json'
+DEVICE_NAMES_FILE = Path(__file__).resolve().parent / 'device_names.json'
 schedule_lock = threading.Lock()
 triggered_schedule_cache = {}
 schedule_thread_started = False
@@ -44,6 +45,29 @@ def save_schedules(schedules):
         return schedules
     except Exception as e:
         logger.error(f'Could not save schedules: {e}')
+        raise
+
+
+def load_device_names():
+    if not DEVICE_NAMES_FILE.exists():
+        return {}
+    try:
+        with schedule_lock, DEVICE_NAMES_FILE.open('r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f'Could not load device names: {e}')
+        return {}
+
+
+def save_device_names(names):
+    try:
+        with schedule_lock:
+            DEVICE_NAMES_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with DEVICE_NAMES_FILE.open('w', encoding='utf-8') as f:
+                json.dump(names, f, indent=2)
+        return names
+    except Exception as e:
+        logger.error(f'Could not save device names: {e}')
         raise
 
 
@@ -694,7 +718,7 @@ WEB_INTERFACE = '''
 
                 let html = '<div class="devices-grid">';
                 for (const device of devices) {
-                    html += buildDeviceCard(device);
+                            html += buildDeviceCard(device);
                 }
                 html += '</div>';
                 container.innerHTML = html;
@@ -722,7 +746,12 @@ WEB_INTERFACE = '''
         function buildDeviceCard(device) {
             return `
                 <div class="device-card" id="device-${device.id}">
-                    <div class="device-name">${device.name}</div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                        <div class="device-name">${device.name}</div>
+                        <div>
+                            <button class="btn-primary" style="padding:6px 8px;font-size:12px;" onclick="promptRename('${device.id}')">✏️ Rename</button>
+                        </div>
+                    </div>
                     <div class="device-info">
                         <div class="device-info-row">
                             <span>Type:</span>
@@ -780,6 +809,36 @@ WEB_INTERFACE = '''
                     </div>
                 </div>
             `;
+        }
+
+        // Prompt and rename helpers
+        function promptRename(deviceId) {
+            const nameEl = document.querySelector(`#device-${deviceId} .device-name`);
+            const current = nameEl ? nameEl.textContent : '';
+            const newName = prompt('Enter new device name:', current);
+            if (newName && newName.trim() !== '' && newName !== current) {
+                renameDevice(deviceId, newName.trim());
+            }
+        }
+
+        async function renameDevice(deviceId, newName) {
+            try {
+                const response = await fetch(`${API_BASE}/devices/${deviceId}/name`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    const nameEl = document.querySelector(`#device-${deviceId} .device-name`);
+                    if (nameEl) nameEl.textContent = newName;
+                    showAlert('Device renamed', 'success');
+                } else {
+                    showAlert(`Rename failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showAlert(`Error: ${error.message}`, 'error');
+            }
         }
 
         function setDeviceCardState(deviceId, isOn) {
@@ -1199,6 +1258,22 @@ def get_devices():
     try:
         discovery = g.discovery
         devices_info = discovery.get_all_devices_info()
+
+        # Override names from local store if present
+        try:
+            names = load_device_names()
+            # support both {'devices':[...]} and list
+            if isinstance(devices_info, dict) and 'devices' in devices_info:
+                for d in devices_info['devices']:
+                    if d.get('id') in names:
+                        d['name'] = names[d.get('id')]
+            elif isinstance(devices_info, list):
+                for d in devices_info:
+                    if d.get('id') in names:
+                        d['name'] = names[d.get('id')]
+        except Exception:
+            logger.debug('No device names to override')
+
         return jsonify({
             'success': True,
             'data': devices_info
@@ -1402,6 +1477,56 @@ def check_brightness_support(device_id):
         })
     except Exception as e:
         logger.error(f"Error checking brightness support: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/devices/<device_id>/name', methods=['GET'])
+def get_device_name(device_id):
+    try:
+        # prefer locally stored name
+        names = load_device_names()
+        if device_id in names:
+            return jsonify({'success': True, 'device_id': device_id, 'name': names[device_id]})
+
+        # fallback to discovery
+        discovery = g.discovery
+        for device_info in getattr(discovery, 'device_list', []):
+            if device_info.id == device_id:
+                return jsonify({'success': True, 'device_id': device_id, 'name': device_info.name})
+
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+    except Exception as e:
+        logger.error(f'Error getting device name: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/devices/<device_id>/name', methods=['POST'])
+def set_device_name(device_id):
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({'success': False, 'error': 'Missing name'}), 400
+
+        new_name = str(data['name']).strip()
+        if not new_name:
+            return jsonify({'success': False, 'error': 'Empty name'}), 400
+
+        # try to update controller if supported
+        try:
+            controller = g.controller
+            if hasattr(controller, 'set_device_name'):
+                controller.set_device_name(device_id, new_name)
+        except Exception:
+            # non-fatal
+            logger.debug('Controller does not support remote rename or rename failed')
+
+        names = load_device_names()
+        names[device_id] = new_name
+        save_device_names(names)
+
+        return jsonify({'success': True, 'device_id': device_id, 'name': new_name}), 200
+    except Exception as e:
+        logger.error(f'Error setting device name: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
