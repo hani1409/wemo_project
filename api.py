@@ -749,7 +749,7 @@ WEB_INTERFACE = '''
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
                         <div style="display:flex;align-items:center;gap:8px;">
                             <span class="device-name" id="name-${device.id}">${device.name}</span>
-                            <input id="edit-input-${device.id}" class="name-edit" style="display:none;padding:6px;border-radius:4px;border:1px solid #ddd;min-width:160px;" value="${device.name}">
+                            <input id="edit-input-${device.id}" class="name-edit" style="display:none;padding:6px;border-radius:4px;border:1px solid #ddd;min-width:160px;" value="${device.name}" onkeydown="handleEditKey(event, '${device.id}')">
                         </div>
                         <div>
                             <button class="btn-primary" id="edit-btn-${device.id}" style="padding:6px 8px;font-size:12px;" onclick="startEdit('${device.id}')">✏️</button>
@@ -850,6 +850,17 @@ WEB_INTERFACE = '''
             if (!newName) { showAlert('Name cannot be empty', 'error'); return; }
             await renameDevice(deviceId, newName);
             cancelEdit(deviceId);
+        }
+
+        function handleEditKey(e, deviceId) {
+            if (!e) return;
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                saveEdit(deviceId);
+            } else if (e.key === 'Escape' || e.key === 'Esc') {
+                e.preventDefault();
+                cancelEdit(deviceId);
+            }
         }
 
         async function renameDevice(deviceId, newName) {
